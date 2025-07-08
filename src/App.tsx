@@ -1,4 +1,3 @@
-import React, { useState, useCallback, useEffect } from 'react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Copy, Download, Code, ChevronDown, ChevronRight, FileText, Trash2, Expand, Minimize, Edit3, Check, X, Settings } from 'lucide-react';
 
