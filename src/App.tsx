@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Copy, Download, Code, ChevronDown, ChevronRight, FileText, Trash2, Expand, Minimize, Edit3, Check, X, Settings } from 'lucide-react';
 
 interface JsonNode {
@@ -22,6 +23,10 @@ function App() {
   const [isEditingFormatted, setIsEditingFormatted] = useState(false);
   const [formattedEditValue, setFormattedEditValue] = useState('');
   const [selectedNode, setSelectedNode] = useState<JsonNode | null>(null);
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const codeScrollRef = useRef<HTMLDivElement>(null);
+  const [isTreeScrolling, setIsTreeScrolling] = useState(false);
+  const [isCodeScrolling, setIsCodeScrolling] = useState(false);
 
   const getValueType = (value: any): string => {
     if (value === null) return 'null';
@@ -101,6 +106,126 @@ function App() {
 
     return nodes;
   }, []);
+
+  // 计算节点在格式化JSON中的行号
+  const getNodeLineNumber = useCallback((node: JsonNode): number => {
+    if (!formattedJson) return 0;
+    
+    const lines = formattedJson.split('\n');
+    const path = node.path;
+    
+    // 如果是根节点
+    if (path.length === 0) return 0;
+    
+    // 构建搜索模式
+    let searchPattern = '';
+    let currentObj = parsedData;
+    
+    for (let i = 0; i < path.length; i++) {
+      const key = path[i];
+      if (Array.isArray(currentObj)) {
+        // 数组索引不需要引号
+        searchPattern = key;
+        currentObj = currentObj[parseInt(key)];
+      } else {
+        // 对象键需要引号
+        searchPattern = `"${key}"`;
+        currentObj = currentObj[key];
+      }
+      
+      // 在格式化的JSON中查找这个键
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        if (line.includes(searchPattern + ':') || (i === path.length - 1 && line.includes(searchPattern))) {
+          return lineIndex;
+        }
+      }
+    }
+    
+    return 0;
+  }, [formattedJson, parsedData]);
+
+  // 根据行号滚动到对应位置
+  const scrollToLine = useCallback((lineNumber: number, targetRef: React.RefObject<HTMLDivElement>) => {
+    if (!targetRef.current) return;
+    
+    const lineHeight = 16; // 假设每行高度为16px (text-xs)
+    const scrollTop = lineNumber * lineHeight;
+    
+    targetRef.current.scrollTo({
+      top: scrollTop,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  // 树状结构滚动处理
+  const handleTreeScroll = useCallback(() => {
+    if (isCodeScrolling) return;
+    
+    setIsTreeScrolling(true);
+    
+    // 防抖处理
+    setTimeout(() => {
+      setIsTreeScrolling(false);
+    }, 150);
+  }, [isCodeScrolling]);
+
+  // 代码区域滚动处理
+  const handleCodeScroll = useCallback(() => {
+    if (isTreeScrolling) return;
+    
+    setIsCodeScrolling(true);
+    
+    if (!codeScrollRef.current || !treeScrollRef.current || !formattedJson) {
+      setTimeout(() => setIsCodeScrolling(false), 150);
+      return;
+    }
+    
+    const codeScrollTop = codeScrollRef.current.scrollTop;
+    const lineHeight = 16;
+    const currentLine = Math.floor(codeScrollTop / lineHeight);
+    
+    // 找到当前行对应的节点
+    const lines = formattedJson.split('\n');
+    let targetNode: JsonNode | null = null;
+    
+    // 从当前行向上查找最近的键
+    for (let i = currentLine; i >= 0; i--) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+      
+      if (trimmedLine.includes(':')) {
+        // 提取键名
+        const keyMatch = trimmedLine.match(/^"([^"]+)"\s*:/);
+        if (keyMatch) {
+          const key = keyMatch[1];
+          // 在树状结构中查找对应的节点
+          targetNode = jsonTree.find(node => 
+            node.key === key || node.key === `"${key}"`
+          );
+          if (targetNode) break;
+        }
+      }
+    }
+    
+    // 如果找到了对应的节点，滚动树状结构到该位置
+    if (targetNode) {
+      const nodeIndex = jsonTree.findIndex(node => node === targetNode);
+      if (nodeIndex !== -1) {
+        const nodeHeight = 32; // 每个节点的高度
+        const scrollTop = nodeIndex * nodeHeight;
+        
+        treeScrollRef.current.scrollTo({
+          top: scrollTop,
+          behavior: 'smooth'
+        });
+      }
+    }
+    
+    setTimeout(() => {
+      setIsCodeScrolling(false);
+    }, 150);
+  }, [isTreeScrolling, formattedJson, jsonTree]);
 
   const formatJson = useCallback(() => {
     if (!jsonInput.trim()) {
@@ -251,7 +376,13 @@ function App() {
 
   const selectNode = useCallback((node: JsonNode) => {
     setSelectedNode(node);
-  }, []);
+    
+    // 同步滚动到对应的代码位置
+    if (!isCodeScrolling && formattedJson) {
+      const lineNumber = getNodeLineNumber(node);
+      scrollToLine(lineNumber, codeScrollRef);
+    }
+  }, [isCodeScrolling, formattedJson, getNodeLineNumber, scrollToLine]);
 
   const getValueDisplay = (node: JsonNode) => {
     const { value, type, path } = node;
@@ -517,6 +648,7 @@ function App() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-1">
+          <div className="flex-1 overflow-y-auto p-1" ref={treeScrollRef} onScroll={handleTreeScroll}>
             {jsonTree.length > 0 ? (
               <div className="space-y-0">
                 {renderJsonTree()}
@@ -585,6 +717,7 @@ function App() {
             </div>
           </div>
           <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto" ref={codeScrollRef} onScroll={handleCodeScroll}>
             {formattedJson ? (
               <div className="h-full">
                 {isEditingFormatted ? (
