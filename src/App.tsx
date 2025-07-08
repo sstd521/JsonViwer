@@ -22,15 +22,6 @@ function App() {
   const [isEditingFormatted, setIsEditingFormatted] = useState(false);
   const [formattedEditValue, setFormattedEditValue] = useState('');
   const [selectedNode, setSelectedNode] = useState<JsonNode | null>(null);
-  const [nodeLineMap, setNodeLineMap] = useState<Map<string, number>>(new Map());
-  const [isScrollSyncing, setIsScrollSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(0);
-  
-  const treeScrollRef = useRef<HTMLDivElement>(null);
-  const codeScrollRef = useRef<HTMLDivElement>(null);
-  const treeItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
 
   const getValueType = (value: any): string => {
     if (value === null) return 'null';
@@ -111,128 +102,6 @@ function App() {
     return nodes;
   }, []);
 
-  const calculateNodeLineNumbers = useCallback((data: any) => {
-    if (!data) return new Map();
-    
-    const lines = JSON.stringify(data, null, 2).split('\n');
-    const lineMap = new Map<string, number>();
-    
-    const processNode = (obj: any, path: string[] = [], startLine: number = 0): number => {
-      if (obj === null || typeof obj !== 'object') {
-        const pathKey = path.join('.');
-        lineMap.set(pathKey, startLine);
-        return startLine;
-      }
-      
-      let currentLine = startLine;
-      
-      if (Array.isArray(obj)) {
-        obj.forEach((item, index) => {
-          const newPath = [...path, index.toString()];
-          const pathKey = newPath.join('.');
-          
-          // 更精确地找到数组项的位置
-          for (let i = currentLine; i < lines.length; i++) {
-            const line = lines[i];
-            const expectedIndent = '  '.repeat(newPath.length);
-            
-            if (typeof item === 'object' && item !== null) {
-              // 对于对象/数组，找到开始的大括号或方括号
-              if ((line.trim().startsWith('{') || line.trim().startsWith('[')) && 
-                  (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
-                lineMap.set(pathKey, i);
-                currentLine = processNode(item, newPath, i + 1);
-                break;
-              }
-            } else {
-              // 对于基本类型，找到包含值的行
-              const valueStr = typeof item === 'string' ? `"${item}"` : String(item);
-              if (line.includes(valueStr) && 
-                  (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
-                lineMap.set(pathKey, i);
-                currentLine = i + 1;
-                break;
-              }
-            }
-          }
-        });
-      } else {
-        Object.entries(obj).forEach(([key, value]) => {
-          const newPath = [...path, key];
-          const pathKey = newPath.join('.');
-          
-          // 更精确地找到对象属性的位置
-          for (let i = currentLine; i < lines.length; i++) {
-            const line = lines[i];
-            const expectedIndent = '  '.repeat(newPath.length);
-            
-            if (line.includes(`"${key}":`) && 
-                (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
-              lineMap.set(pathKey, i);
-              if (typeof value === 'object' && value !== null) {
-                currentLine = processNode(value, newPath, i + 1);
-              } else {
-                currentLine = i + 1;
-              }
-              break;
-            }
-          }
-        });
-      }
-      
-      return currentLine;
-    };
-    
-    processNode(data);
-    return lineMap;
-  }, []);
-
-  // 节流函数
-  const throttle = useCallback((func: Function, delay: number) => {
-    return (...args: any[]) => {
-      const now = Date.now();
-      if (now - lastSyncTime >= delay) {
-        setLastSyncTime(now);
-        func(...args);
-      }
-    };
-  }, [lastSyncTime]);
-
-  // 平滑滚动函数
-  const smoothScrollTo = useCallback((element: HTMLElement, targetScrollTop: number, duration: number = 100) => {
-    const startScrollTop = element.scrollTop;
-    const distance = targetScrollTop - startScrollTop;
-    
-    // 如果距离很小，直接设置，避免不必要的动画
-    if (Math.abs(distance) < 5) {
-      element.scrollTop = targetScrollTop;
-      setIsScrollSyncing(false);
-      return;
-    }
-    
-    const startTime = performance.now();
-
-    const animateScroll = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // 使用缓动函数
-      const easeOutCubic = 1 - Math.pow(1 - progress, 2);
-      element.scrollTop = startScrollTop + distance * easeOutCubic;
-
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animateScroll);
-      } else {
-        setIsScrollSyncing(false);
-      }
-    };
-
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-    animationFrameRef.current = requestAnimationFrame(animateScroll);
-  }, []);
-
   const formatJson = useCallback(() => {
     if (!jsonInput.trim()) {
       setError('请输入JSON内容');
@@ -245,7 +114,6 @@ function App() {
       setFormattedJson(formatted);
       setParsedData(parsed);
       setJsonTree(buildJsonTree(parsed));
-      setNodeLineMap(calculateNodeLineNumbers(parsed));
       setError('');
       setSelectedNode(null);
     } catch (err) {
@@ -255,23 +123,21 @@ function App() {
       setJsonTree([]);
       setSelectedNode(null);
     }
-  }, [jsonInput, buildJsonTree, calculateNodeLineNumbers]);
+  }, [jsonInput, buildJsonTree]);
 
   useEffect(() => {
     if (parsedData !== null) {
       const formatted = JSON.stringify(parsedData, null, 2);
       setFormattedJson(formatted);
       setJsonTree(buildJsonTree(parsedData));
-      setNodeLineMap(calculateNodeLineNumbers(parsedData));
     }
-  }, [parsedData, buildJsonTree, calculateNodeLineNumbers]);
+  }, [parsedData, buildJsonTree]);
 
   const toggleExpanded = useCallback((index: number) => {
     setJsonTree(prev => {
       const newTree = [...prev];
-      if (newTree[index]) {
-        newTree[index] = { ...newTree[index], isExpanded: !newTree[index].isExpanded };
-      }
+      const node = newTree[index];
+      node.isExpanded = !node.isExpanded;
       return newTree;
     });
   }, []);
@@ -385,159 +251,6 @@ function App() {
 
   const selectNode = useCallback((node: JsonNode) => {
     setSelectedNode(node);
-    
-    // 同步滚动到格式化代码对应位置
-    if (!isScrollSyncing && codeScrollRef.current) {
-      const pathKey = node.path.join('.');
-      const lineNumber = nodeLineMap.get(pathKey);
-      
-      if (lineNumber !== undefined) {
-        setIsScrollSyncing(true);
-        const lineHeight = 16;
-        const codeContainer = codeScrollRef.current;
-        const containerHeight = codeContainer.clientHeight;
-        
-        // 让选中的行显示在代码区域的上方1/3位置，而不是中心
-        const targetScrollTop = Math.max(0, lineNumber * lineHeight - containerHeight * 0.3);
-        smoothScrollTo(codeScrollRef.current, scrollTop);
-      }
-    }
-  }, [nodeLineMap, isScrollSyncing, smoothScrollTo]);
-
-  const handleTreeScrollInternal = useCallback(() => {
-    if (isScrollSyncing || !treeScrollRef.current || !codeScrollRef.current) return;
-    
-    const treeContainer = treeScrollRef.current;
-    const codeContainer = codeScrollRef.current;
-    const scrollTop = treeContainer.scrollTop;
-    const containerHeight = treeContainer.clientHeight;
-    
-    // 计算树状结构可视区域的上方1/3位置作为参考点
-    const viewportReference = scrollTop + containerHeight * 0.3;
-    
-    let closestNode: JsonNode | null = null;
-    let closestDistance = Infinity;
-    
-    // 只检查可见区域内的节点
-    treeItemRefs.current.forEach((element, pathKey) => {
-      const elementTop = element.offsetTop;
-      const elementBottom = elementTop + element.offsetHeight;
-      const elementCenter = elementTop + element.offsetHeight / 2;
-      
-      // 只处理可见区域内的元素
-      if (elementBottom >= scrollTop && elementTop <= scrollTop + containerHeight) {
-        const node = jsonTree.find(n => n.path.join('.') === pathKey);
-        if (node) {
-          const distance = Math.abs(elementCenter - viewportReference);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestNode = node;
-          }
-        }
-      }
-    });
-    
-    if (closestNode) {
-      const pathKey = closestNode.path.join('.');
-      const lineNumber = nodeLineMap.get(pathKey);
-      
-      if (lineNumber !== undefined) {
-        setIsScrollSyncing(true);
-        const lineHeight = 16;
-        
-        // 让对应行显示在代码区域的上方1/3位置
-        const targetScrollTop = Math.max(0, lineNumber * lineHeight - codeContainer.clientHeight * 0.3);
-        smoothScrollTo(codeContainer, targetScrollTop, 100);
-      }
-    }
-  }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
-
-  const handleCodeScrollInternal = useCallback(() => {
-    if (isScrollSyncing || !codeScrollRef.current || !treeScrollRef.current) return;
-    
-    const codeContainer = codeScrollRef.current;
-    const treeContainer = treeScrollRef.current;
-    const scrollTop = codeContainer.scrollTop;
-    const containerHeight = codeContainer.clientHeight;
-    const lineHeight = 16;
-    
-    // 计算代码区域可视上方1/3位置对应的行号
-    const referenceLine = Math.floor((scrollTop + containerHeight * 0.3) / lineHeight);
-    
-    let closestNode: JsonNode | null = null;
-    let closestDistance = Infinity;
-    
-    // 找到最接近参考行的节点
-    nodeLineMap.forEach((lineNumber, pathKey) => {
-      const distance = Math.abs(lineNumber - referenceLine);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        const node = jsonTree.find(n => n.path.join('.') === pathKey);
-        if (node) {
-          closestNode = node;
-        }
-      }
-    });
-    
-    if (closestNode) {
-      const pathKey = closestNode.path.join('.');
-      const element = treeItemRefs.current.get(pathKey);
-      
-      if (element) {
-        setIsScrollSyncing(true);
-        const elementTop = element.offsetTop;
-        const elementHeight = element.offsetHeight;
-        
-        // 让对应节点显示在树状结构的上方1/3位置
-        const targetScrollTop = Math.max(0, elementTop - treeContainer.clientHeight * 0.3 + elementHeight / 2);
-        smoothScrollTo(treeContainer, targetScrollTop, 100);
-      }
-    }
-  }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
-
-  // 使用节流的滚动处理函数
-  const handleTreeScroll = useCallback(
-    throttle(handleTreeScrollInternal, 16), // 60fps，提高响应性
-    [handleTreeScrollInternal, throttle]
-  );
-
-  const handleCodeScroll = useCallback(
-    throttle(handleCodeScrollInternal, 16), // 60fps，提高响应性
-    [handleCodeScrollInternal, throttle]
-  );
-
-  // 添加滚动结束检测，减少抖动
-  const handleScrollEnd = useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    
-    scrollTimeoutRef.current = setTimeout(() => {
-      setIsScrollSyncing(false);
-    }, 150); // 滚动结束后150ms才允许新的同步
-  }, []);
-
-  // 修改滚动处理函数，添加滚动结束检测
-  const handleTreeScrollWithEnd = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    handleTreeScroll();
-    handleScrollEnd();
-  }, [handleTreeScroll, handleScrollEnd]);
-
-  const handleCodeScrollWithEnd = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    handleCodeScroll();
-    handleScrollEnd();
-  }, [handleCodeScroll, handleScrollEnd]);
-
-  // 清理函数
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
   }, []);
 
   const getValueDisplay = (node: JsonNode) => {
@@ -630,14 +343,6 @@ function App() {
       return (
         <div
           key={originalIndex}
-          ref={(el) => {
-            const pathKey = node.path.join('.');
-            if (el) {
-              treeItemRefs.current.set(pathKey, el);
-            } else {
-              treeItemRefs.current.delete(pathKey);
-            }
-          }}
           className={`group flex items-center py-1.5 px-2 hover:bg-blue-50 rounded cursor-pointer transition-colors duration-200 ${
             isSelected ? 'bg-blue-100 border-l-4 border-blue-500' : ''
           }`}
@@ -648,16 +353,14 @@ function App() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                e.preventDefault();
                 toggleExpanded(originalIndex);
               }}
-              className="flex items-center justify-center w-4 h-4 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0 z-10 relative"
-              type="button"
+              className="flex items-center justify-center w-3 h-3 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200"
             >
-              {node.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {node.isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             </button>
           ) : (
-            <div className="w-4 h-4 mr-1 flex-shrink-0" />
+            <div className="w-3 h-3 mr-1" />
           )}
           <span className="text-blue-700 font-medium mr-1 text-xs truncate flex-shrink-0" style={{ maxWidth: '120px' }}>{node.key}:</span>
           <div className="text-xs flex-1 min-w-0">{getValueDisplay(node)}</div>
@@ -815,11 +518,7 @@ function App() {
           </div>
           <div className="flex-1 overflow-y-auto p-1">
             {jsonTree.length > 0 ? (
-              <div 
-                ref={treeScrollRef}
-                className="space-y-0 h-full overflow-y-auto scroll-smooth"
-                onScroll={handleTreeScrollWithEnd}
-              >
+              <div className="space-y-0">
                 {renderJsonTree()}
               </div>
             ) : (
@@ -896,12 +595,7 @@ function App() {
                     autoFocus
                   />
                 ) : (
-                  <pre 
-                    ref={codeScrollRef}
-                    className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap scroll-smooth"
-                    onScroll={handleCodeScrollWithEnd}
-                    style={{ lineHeight: '16px' }}
-                  >
+                  <pre className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap">
                     {formattedJson}
                   </pre>
                 )}
