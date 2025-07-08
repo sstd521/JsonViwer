@@ -265,20 +265,20 @@ function App() {
             type="text"
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
-            className="px-2 py-1 border border-gray-300 rounded text-sm font-mono"
+            className="px-1 py-0.5 border border-gray-300 rounded text-xs font-mono flex-1"
             autoFocus
           />
           <button
             onClick={() => saveEdit(node)}
-            className="p-1 text-green-600 hover:bg-green-100 rounded"
+            className="p-0.5 text-green-600 hover:bg-green-100 rounded"
           >
-            <Check size={14} />
+            <Check size={12} />
           </button>
           <button
             onClick={cancelEdit}
-            className="p-1 text-red-600 hover:bg-red-100 rounded"
+            className="p-0.5 text-red-600 hover:bg-red-100 rounded"
           >
-            <X size={14} />
+            <X size={12} />
           </button>
         </div>
       );
@@ -289,17 +289,17 @@ function App() {
     return (
       <div className="flex items-center space-x-2">
         {type === 'null' && <span className="text-gray-500 font-medium">null</span>}
-        {type === 'string' && <span className="text-green-600 font-medium">"{value}"</span>}
+        {type === 'string' && <span className="text-green-600 font-medium truncate" style={{ maxWidth: '150px' }}>"{value}"</span>}
         {type === 'number' && <span className="text-blue-600 font-medium">{value}</span>}
         {type === 'boolean' && <span className="text-purple-600 font-medium">{value.toString()}</span>}
-        {type === 'array' && <span className="text-orange-600 font-medium">[{value.length} items]</span>}
-        {type === 'object' && <span className="text-red-600 font-medium">{`{${Object.keys(value).length} keys}`}</span>}
+        {type === 'array' && <span className="text-orange-600 font-medium">[{value.length}]</span>}
+        {type === 'object' && <span className="text-red-600 font-medium">{`{${Object.keys(value).length}}`}</span>}
         {canEdit && (
           <button
             onClick={() => startEdit(node)}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded opacity-0 group-hover:opacity-100 transition-opacity"
           >
-            <Edit3 size={12} />
+            <Edit3 size={10} />
           </button>
         )}
       </div>
@@ -346,7 +346,7 @@ function App() {
           className={`group flex items-center py-1.5 px-2 hover:bg-blue-50 rounded cursor-pointer transition-colors duration-200 ${
             isSelected ? 'bg-blue-100 border-l-4 border-blue-500' : ''
           }`}
-          style={{ paddingLeft: `${indent + 8}px` }}
+          style={{ paddingLeft: `${indent + 4}px` }}
           onClick={() => selectNode(node)}
         >
           {hasChildren ? (
@@ -355,15 +355,15 @@ function App() {
                 e.stopPropagation();
                 toggleExpanded(originalIndex);
               }}
-              className="flex items-center justify-center w-4 h-4 mr-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200"
+              className="flex items-center justify-center w-3 h-3 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200"
             >
-              {node.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {node.isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             </button>
           ) : (
-            <div className="w-4 h-4 mr-2" />
+            <div className="w-3 h-3 mr-1" />
           )}
-          <span className="text-blue-700 font-medium mr-2 text-sm">{node.key}:</span>
-          <div className="text-sm">{getValueDisplay(node)}</div>
+          <span className="text-blue-700 font-medium mr-1 text-xs truncate flex-shrink-0" style={{ maxWidth: '120px' }}>{node.key}:</span>
+          <div className="text-xs flex-1 min-w-0">{getValueDisplay(node)}</div>
         </div>
       );
     });
@@ -374,8 +374,8 @@ function App() {
       return (
         <div className="flex items-center justify-center h-full text-gray-500">
           <div className="text-center">
-            <Settings size={48} className="mx-auto mb-4 opacity-50" />
-            <p>选择一个节点查看属性</p>
+            <Settings size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">选择节点查看属性</p>
           </div>
         </div>
       );
@@ -384,26 +384,26 @@ function App() {
     const { key, value, type, path } = selectedNode;
 
     return (
-      <div className="p-4 space-y-4">
-        <div className="border-b border-gray-200 pb-4">
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">节点属性</h3>
+      <div className="p-3 space-y-3">
+        <div className="border-b border-gray-200 pb-2">
+          <h3 className="text-base font-semibold text-gray-800 mb-1">节点属性</h3>
         </div>
         
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">键名</label>
-            <div className="p-2 bg-gray-50 rounded border text-sm font-mono">{key}</div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">键名</label>
+            <div className="p-2 bg-gray-50 rounded border text-xs font-mono break-all">{key}</div>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">路径</label>
-            <div className="p-2 bg-gray-50 rounded border text-sm font-mono">
+            <label className="block text-xs font-medium text-gray-600 mb-1">路径</label>
+            <div className="p-2 bg-gray-50 rounded border text-xs font-mono break-all">
               {path.length > 0 ? path.join(' → ') : 'root'}
             </div>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">类型</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">类型</label>
             <div className={`inline-block px-2 py-1 rounded text-xs font-medium ${
               type === 'string' ? 'bg-green-100 text-green-800' :
               type === 'number' ? 'bg-blue-100 text-blue-800' :
@@ -417,9 +417,9 @@ function App() {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">值</label>
-            <div className="p-3 bg-gray-50 rounded border max-h-40 overflow-auto">
-              <pre className="text-sm font-mono whitespace-pre-wrap">
+            <label className="block text-xs font-medium text-gray-600 mb-1">值</label>
+            <div className="p-2 bg-gray-50 rounded border max-h-32 overflow-auto">
+              <pre className="text-xs font-mono whitespace-pre-wrap">
                 {type === 'object' || type === 'array' 
                   ? JSON.stringify(value, null, 2)
                   : JSON.stringify(value)
@@ -430,10 +430,10 @@ function App() {
           
           {(type === 'object' || type === 'array') && (
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
                 {type === 'array' ? '数组长度' : '对象键数'}
               </label>
-              <div className="p-2 bg-gray-50 rounded border text-sm font-mono">
+              <div className="p-2 bg-gray-50 rounded border text-xs font-mono">
                 {type === 'array' ? value.length : Object.keys(value).length}
               </div>
             </div>
@@ -447,47 +447,47 @@ function App() {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2">
           <Code className="text-blue-600" size={28} />
-          <h1 className="text-2xl font-bold text-gray-800">JSON 格式化工具</h1>
+          <h1 className="text-xl font-bold text-gray-800 truncate">JSON 格式化工具</h1>
         </div>
       </div>
 
       {/* Main Content - Four Column Layout */}
-      <div className="flex h-[calc(100vh-80px)]">
+      <div className="flex h-[calc(100vh-72px)]">
         {/* Column 1: Input Area */}
-        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
+        <div className="w-72 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-3 border-b border-gray-200">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center mb-2 truncate">
               <FileText className="mr-2 text-blue-600" size={18} />
               输入 JSON
             </h2>
-            <div className="flex space-x-2 mb-3">
+            <div className="flex space-x-1 mb-2">
               <button
                 onClick={formatJson}
-                className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-200 text-sm"
+                className="flex-1 flex items-center justify-center px-2 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-200 text-xs"
               >
-                <Code size={14} className="mr-1" />
+                <Code size={12} className="mr-1" />
                 格式化
               </button>
               <button
                 onClick={clearInput}
-                className="flex items-center justify-center px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors duration-200 text-sm"
+                className="flex items-center justify-center px-2 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors duration-200 text-xs"
               >
-                <Trash2 size={14} />
+                <Trash2 size={12} />
               </button>
             </div>
           </div>
-          <div className="flex-1 p-4">
+          <div className="flex-1 p-3">
             <textarea
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
               placeholder="在这里粘贴您的 JSON 数据..."
-              className="w-full h-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
+              className="w-full h-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-xs"
             />
             {error && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-                <p className="text-red-700 text-sm">{error}</p>
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                <p className="text-red-700 text-xs">{error}</p>
               </div>
             )}
           </div>
@@ -495,35 +495,35 @@ function App() {
 
         {/* Column 2: Tree Structure */}
         <div className="flex-1 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">树状结构</h2>
-              <div className="flex space-x-2">
+              <h2 className="text-base font-semibold text-gray-800 truncate">树状结构</h2>
+              <div className="flex space-x-1">
                 <button
                   onClick={expandAll}
-                  className="flex items-center px-3 py-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors duration-200 text-sm"
+                  className="flex items-center px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors duration-200 text-xs"
                 >
-                  <Expand size={14} className="mr-1" />
+                  <Expand size={12} className="mr-1" />
                   展开
                 </button>
                 <button
                   onClick={collapseAll}
-                  className="flex items-center px-3 py-1.5 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors duration-200 text-sm"
+                  className="flex items-center px-2 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors duration-200 text-xs"
                 >
-                  <Minimize size={14} className="mr-1" />
+                  <Minimize size={12} className="mr-1" />
                   收缩
                 </button>
               </div>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto p-1">
             {jsonTree.length > 0 ? (
-              <div className="space-y-0.5">
+              <div className="space-y-0">
                 {renderJsonTree()}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <p>请先输入并格式化 JSON 数据</p>
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                <p>请先输入并格式化 JSON</p>
               </div>
             )}
           </div>
@@ -531,35 +531,35 @@ function App() {
 
         {/* Column 3: Formatted Code */}
         <div className="flex-1 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">格式化代码</h2>
-              <div className="flex space-x-2">
+              <h2 className="text-base font-semibold text-gray-800 truncate">格式化代码</h2>
+              <div className="flex space-x-1">
                 {!isEditingFormatted ? (
                   <>
                     <button
                       onClick={startFormattedEdit}
-                      className="flex items-center px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition-colors duration-200 text-sm"
+                      className="flex items-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition-colors duration-200 text-xs"
                     >
-                      <Edit3 size={14} className="mr-1" />
+                      <Edit3 size={12} className="mr-1" />
                       编辑
                     </button>
                     <button
                       onClick={copyToClipboard}
-                      className={`flex items-center px-3 py-1.5 rounded transition-colors duration-200 text-sm ${
+                      className={`flex items-center px-2 py-1 rounded transition-colors duration-200 text-xs ${
                         copySuccess
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      <Copy size={14} className="mr-1" />
+                      <Copy size={12} className="mr-1" />
                       {copySuccess ? '已复制' : '复制'}
                     </button>
                     <button
                       onClick={downloadJson}
-                      className="flex items-center px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors duration-200 text-sm"
+                      className="flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors duration-200 text-xs"
                     >
-                      <Download size={14} className="mr-1" />
+                      <Download size={12} className="mr-1" />
                       下载
                     </button>
                   </>
@@ -567,16 +567,16 @@ function App() {
                   <>
                     <button
                       onClick={saveFormattedEdit}
-                      className="flex items-center px-3 py-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors duration-200 text-sm"
+                      className="flex items-center px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors duration-200 text-xs"
                     >
-                      <Check size={14} className="mr-1" />
+                      <Check size={12} className="mr-1" />
                       保存
                     </button>
                     <button
                       onClick={cancelFormattedEdit}
-                      className="flex items-center px-3 py-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors duration-200 text-sm"
+                      className="flex items-center px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors duration-200 text-xs"
                     >
-                      <X size={14} className="mr-1" />
+                      <X size={12} className="mr-1" />
                       取消
                     </button>
                   </>
@@ -591,27 +591,27 @@ function App() {
                   <textarea
                     value={formattedEditValue}
                     onChange={(e) => setFormattedEditValue(e.target.value)}
-                    className="w-full h-full p-4 bg-gray-900 text-green-400 font-mono text-sm border-none outline-none resize-none"
+                    className="w-full h-full p-3 bg-gray-900 text-green-400 font-mono text-xs border-none outline-none resize-none"
                     autoFocus
                   />
                 ) : (
-                  <pre className="p-4 bg-gray-900 text-green-400 font-mono text-sm h-full overflow-auto whitespace-pre-wrap">
+                  <pre className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap">
                     {formattedJson}
                   </pre>
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <p>格式化后的代码将显示在这里</p>
+              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                <p>格式化后的代码显示在这里</p>
               </div>
             )}
           </div>
         </div>
 
         {/* Column 4: Properties Panel */}
-        <div className="w-80 bg-white flex flex-col">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
+        <div className="w-72 bg-white flex flex-col">
+          <div className="p-3 border-b border-gray-200">
+            <h2 className="text-base font-semibold text-gray-800 flex items-center truncate">
               <Settings className="mr-2 text-blue-600" size={18} />
               属性面板
             </h2>
