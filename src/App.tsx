@@ -24,10 +24,13 @@ function App() {
   const [selectedNode, setSelectedNode] = useState<JsonNode | null>(null);
   const [nodeLineMap, setNodeLineMap] = useState<Map<string, number>>(new Map());
   const [isScrollSyncing, setIsScrollSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(0);
   
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const codeScrollRef = useRef<HTMLDivElement>(null);
   const treeItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const getValueType = (value: any): string => {
     if (value === null) return 'null';
@@ -182,6 +185,44 @@ function App() {
     
     processNode(data);
     return lineMap;
+  }, []);
+
+  // 节流函数
+  const throttle = useCallback((func: Function, delay: number) => {
+    return (...args: any[]) => {
+      const now = Date.now();
+      if (now - lastSyncTime >= delay) {
+        setLastSyncTime(now);
+        func(...args);
+      }
+    };
+  }, [lastSyncTime]);
+
+  // 平滑滚动函数
+  const smoothScrollTo = useCallback((element: HTMLElement, targetScrollTop: number, duration: number = 150) => {
+    const startScrollTop = element.scrollTop;
+    const distance = targetScrollTop - startScrollTop;
+    const startTime = performance.now();
+
+    const animateScroll = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // 使用缓动函数
+      const easeOutCubic = 1 - Math.pow(1 - progress, 3);
+      element.scrollTop = startScrollTop + distance * easeOutCubic;
+
+      if (progress < 1) {
+        animationFrameRef.current = requestAnimationFrame(animateScroll);
+      } else {
+        setIsScrollSyncing(false);
+      }
+    };
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = requestAnimationFrame(animateScroll);
   }, []);
 
   const formatJson = useCallback(() => {
@@ -343,42 +384,52 @@ function App() {
       
       if (lineNumber !== undefined) {
         setIsScrollSyncing(true);
-        const lineHeight = 16; // 假设每行高度为16px
+        const lineHeight = 16;
         const scrollTop = lineNumber * lineHeight;
-        codeScrollRef.current.scrollTop = scrollTop;
-        
-        setTimeout(() => setIsScrollSyncing(false), 100);
+        smoothScrollTo(codeScrollRef.current, scrollTop);
       }
     }
-  }, []);
+  }, [nodeLineMap, isScrollSyncing, smoothScrollTo]);
 
-  const handleTreeScroll = useCallback(() => {
+  const handleTreeScrollInternal = useCallback(() => {
     if (isScrollSyncing || !treeScrollRef.current || !codeScrollRef.current) return;
     
-    // 找到当前可见区域中间的节点
     const treeContainer = treeScrollRef.current;
     const scrollTop = treeContainer.scrollTop;
     const containerHeight = treeContainer.clientHeight;
     const middleY = scrollTop + containerHeight / 2;
     
-    // 遍历所有可见节点，找到最接近中间位置的节点
+    // 优化：只检查可见区域附近的节点
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
     
+    // 使用更高效的方式查找可见节点
+    const visibleElements: Array<{ element: HTMLDivElement; pathKey: string; node: JsonNode }> = [];
+    
     treeItemRefs.current.forEach((element, pathKey) => {
-      const rect = element.getBoundingClientRect();
-      const containerRect = treeContainer.getBoundingClientRect();
-      const elementMiddle = rect.top - containerRect.top + treeContainer.scrollTop + rect.height / 2;
+      const elementTop = element.offsetTop;
+      const elementBottom = elementTop + element.offsetHeight;
+      
+      // 只处理可见区域附近的元素
+      if (elementBottom >= scrollTop - 100 && elementTop <= scrollTop + containerHeight + 100) {
+        const node = jsonTree.find(n => n.path.join('.') === pathKey);
+        if (node) {
+          visibleElements.push({ element, pathKey, node });
+        }
+      }
+    });
+    
+    // 在可见元素中找到最接近中间的
+    visibleElements.forEach(({ element, node }) => {
+      const elementMiddle = element.offsetTop + element.offsetHeight / 2;
       const distance = Math.abs(elementMiddle - middleY);
       
       if (distance < closestDistance) {
         closestDistance = distance;
-        const node = jsonTree.find(n => n.path.join('.') === pathKey);
-        if (node) closestNode = node;
+        closestNode = node;
       }
     });
     
-    // 同步滚动格式化代码
     if (closestNode && codeScrollRef.current) {
       const pathKey = closestNode.path.join('.');
       const lineNumber = nodeLineMap.get(pathKey);
@@ -387,14 +438,12 @@ function App() {
         setIsScrollSyncing(true);
         const lineHeight = 16;
         const scrollTop = lineNumber * lineHeight;
-        codeScrollRef.current.scrollTop = scrollTop;
-        
-        setTimeout(() => setIsScrollSyncing(false), 100);
+        smoothScrollTo(codeScrollRef.current, scrollTop, 100);
       }
     }
-  }, [jsonTree, nodeLineMap, isScrollSyncing]);
+  }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
 
-  const handleCodeScroll = useCallback(() => {
+  const handleCodeScrollInternal = useCallback(() => {
     if (isScrollSyncing || !codeScrollRef.current || !treeScrollRef.current) return;
     
     const codeContainer = codeScrollRef.current;
@@ -402,20 +451,32 @@ function App() {
     const lineHeight = 16;
     const currentLine = Math.floor(scrollTop / lineHeight);
     
-    // 找到最接近当前行的节点
+    // 优化：使用二分查找或更高效的方式找到最接近的节点
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
     
-    nodeLineMap.forEach((lineNumber, pathKey) => {
-      const distance = Math.abs(lineNumber - currentLine);
+    // 创建一个按行号排序的数组来优化查找
+    const sortedNodes = Array.from(nodeLineMap.entries())
+      .map(([pathKey, lineNumber]) => ({
+        pathKey,
+        lineNumber,
+        node: jsonTree.find(n => n.path.join('.') === pathKey)
+      }))
+      .filter(item => item.node)
+      .sort((a, b) => a.lineNumber - b.lineNumber);
+    
+    // 找到最接近当前行的节点
+    for (const item of sortedNodes) {
+      const distance = Math.abs(item.lineNumber - currentLine);
       if (distance < closestDistance) {
         closestDistance = distance;
-        const node = jsonTree.find(n => n.path.join('.') === pathKey);
-        if (node) closestNode = node;
+        closestNode = item.node!;
+      } else if (distance > closestDistance) {
+        // 由于已排序，距离开始增加时可以停止搜索
+        break;
       }
-    });
+    }
     
-    // 同步滚动树状结构
     if (closestNode && treeScrollRef.current) {
       const pathKey = closestNode.path.join('.');
       const element = treeItemRefs.current.get(pathKey);
@@ -425,14 +486,35 @@ function App() {
         const treeContainer = treeScrollRef.current;
         const elementTop = element.offsetTop;
         const containerHeight = treeContainer.clientHeight;
-        const scrollTop = elementTop - containerHeight / 2;
+        const scrollTop = Math.max(0, elementTop - containerHeight / 2);
         
-        treeContainer.scrollTop = Math.max(0, scrollTop);
-        
-        setTimeout(() => setIsScrollSyncing(false), 100);
+        smoothScrollTo(treeContainer, scrollTop, 100);
       }
     }
-  }, [jsonTree, nodeLineMap, isScrollSyncing]);
+  }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
+
+  // 使用节流的滚动处理函数
+  const handleTreeScroll = useCallback(
+    throttle(handleTreeScrollInternal, 16), // 约60fps
+    [handleTreeScrollInternal, throttle]
+  );
+
+  const handleCodeScroll = useCallback(
+    throttle(handleCodeScrollInternal, 16), // 约60fps
+    [handleCodeScrollInternal, throttle]
+  );
+
+  // 清理函数
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   const getValueDisplay = (node: JsonNode) => {
     const { value, type, path } = node;
@@ -711,6 +793,7 @@ function App() {
                 ref={treeScrollRef}
                 className="space-y-0 h-full overflow-y-auto"
                 onScroll={handleTreeScroll}
+                style={{ scrollBehavior: 'auto' }}
               >
                 {renderJsonTree()}
               </div>
@@ -792,7 +875,7 @@ function App() {
                     ref={codeScrollRef}
                     className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap"
                     onScroll={handleCodeScroll}
-                    style={{ lineHeight: '16px' }}
+                    style={{ lineHeight: '16px', scrollBehavior: 'auto' }}
                   >
                     {formattedJson}
                   </pre>
