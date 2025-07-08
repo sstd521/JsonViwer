@@ -199,9 +199,17 @@ function App() {
   }, [lastSyncTime]);
 
   // 平滑滚动函数
-  const smoothScrollTo = useCallback((element: HTMLElement, targetScrollTop: number, duration: number = 150) => {
+  const smoothScrollTo = useCallback((element: HTMLElement, targetScrollTop: number, duration: number = 100) => {
     const startScrollTop = element.scrollTop;
     const distance = targetScrollTop - startScrollTop;
+    
+    // 如果距离很小，直接设置，避免不必要的动画
+    if (Math.abs(distance) < 5) {
+      element.scrollTop = targetScrollTop;
+      setIsScrollSyncing(false);
+      return;
+    }
+    
     const startTime = performance.now();
 
     const animateScroll = (currentTime: number) => {
@@ -209,7 +217,7 @@ function App() {
       const progress = Math.min(elapsed / duration, 1);
       
       // 使用缓动函数
-      const easeOutCubic = 1 - Math.pow(1 - progress, 3);
+      const easeOutCubic = 1 - Math.pow(1 - progress, 2);
       element.scrollTop = startScrollTop + distance * easeOutCubic;
 
       if (progress < 1) {
@@ -378,16 +386,19 @@ function App() {
   const selectNode = useCallback((node: JsonNode) => {
     setSelectedNode(node);
     
-    // 同步滚动到格式化代码对应位置，添加偏移量优化对齐
+    // 同步滚动到格式化代码对应位置
     if (!isScrollSyncing && codeScrollRef.current) {
       const pathKey = node.path.join('.');
       const lineNumber = nodeLineMap.get(pathKey);
       
       if (lineNumber !== undefined) {
         setIsScrollSyncing(true);
-        const lineHeight = 16; // 与CSS中的line-height保持一致
-        const headerOffset = 48; // 考虑代码区域的padding
-        const scrollTop = Math.max(0, lineNumber * lineHeight - headerOffset);
+        const lineHeight = 16;
+        const codeContainer = codeScrollRef.current;
+        const containerHeight = codeContainer.clientHeight;
+        
+        // 让选中的行显示在代码区域的上方1/3位置，而不是中心
+        const targetScrollTop = Math.max(0, lineNumber * lineHeight - containerHeight * 0.3);
         smoothScrollTo(codeScrollRef.current, scrollTop);
       }
     }
@@ -401,8 +412,8 @@ function App() {
     const scrollTop = treeContainer.scrollTop;
     const containerHeight = treeContainer.clientHeight;
     
-    // 计算树状结构可视区域的中心点
-    const viewportCenter = scrollTop + containerHeight / 2;
+    // 计算树状结构可视区域的上方1/3位置作为参考点
+    const viewportReference = scrollTop + containerHeight * 0.3;
     
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
@@ -417,7 +428,7 @@ function App() {
       if (elementBottom >= scrollTop && elementTop <= scrollTop + containerHeight) {
         const node = jsonTree.find(n => n.path.join('.') === pathKey);
         if (node) {
-          const distance = Math.abs(elementCenter - viewportCenter);
+          const distance = Math.abs(elementCenter - viewportReference);
           if (distance < closestDistance) {
             closestDistance = distance;
             closestNode = node;
@@ -433,11 +444,10 @@ function App() {
       if (lineNumber !== undefined) {
         setIsScrollSyncing(true);
         const lineHeight = 16;
-        const codeContainerHeight = codeContainer.clientHeight;
         
-        // 计算目标滚动位置，让对应行显示在代码区域的中心
-        const targetScrollTop = Math.max(0, lineNumber * lineHeight - codeContainerHeight / 2 + lineHeight / 2);
-        smoothScrollTo(codeContainer, targetScrollTop, 120);
+        // 让对应行显示在代码区域的上方1/3位置
+        const targetScrollTop = Math.max(0, lineNumber * lineHeight - codeContainer.clientHeight * 0.3);
+        smoothScrollTo(codeContainer, targetScrollTop, 100);
       }
     }
   }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
@@ -451,15 +461,15 @@ function App() {
     const containerHeight = codeContainer.clientHeight;
     const lineHeight = 16;
     
-    // 计算代码区域可视中心对应的行号
-    const centerLine = Math.floor((scrollTop + containerHeight / 2) / lineHeight);
+    // 计算代码区域可视上方1/3位置对应的行号
+    const referenceLine = Math.floor((scrollTop + containerHeight * 0.3) / lineHeight);
     
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
     
-    // 找到最接近中心行的节点
+    // 找到最接近参考行的节点
     nodeLineMap.forEach((lineNumber, pathKey) => {
-      const distance = Math.abs(lineNumber - centerLine);
+      const distance = Math.abs(lineNumber - referenceLine);
       if (distance < closestDistance) {
         closestDistance = distance;
         const node = jsonTree.find(n => n.path.join('.') === pathKey);
@@ -476,26 +486,47 @@ function App() {
       if (element) {
         setIsScrollSyncing(true);
         const elementTop = element.offsetTop;
-        const treeContainerHeight = treeContainer.clientHeight;
         const elementHeight = element.offsetHeight;
         
-        // 计算目标滚动位置，让对应节点显示在树状结构的中心
-        const targetScrollTop = Math.max(0, elementTop - treeContainerHeight / 2 + elementHeight / 2);
-        smoothScrollTo(treeContainer, targetScrollTop, 120);
+        // 让对应节点显示在树状结构的上方1/3位置
+        const targetScrollTop = Math.max(0, elementTop - treeContainer.clientHeight * 0.3 + elementHeight / 2);
+        smoothScrollTo(treeContainer, targetScrollTop, 100);
       }
     }
   }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
 
   // 使用节流的滚动处理函数
   const handleTreeScroll = useCallback(
-    throttle(handleTreeScrollInternal, 20), // 50fps，减少计算频率
+    throttle(handleTreeScrollInternal, 16), // 60fps，提高响应性
     [handleTreeScrollInternal, throttle]
   );
 
   const handleCodeScroll = useCallback(
-    throttle(handleCodeScrollInternal, 20), // 50fps，减少计算频率
+    throttle(handleCodeScrollInternal, 16), // 60fps，提高响应性
     [handleCodeScrollInternal, throttle]
   );
+
+  // 添加滚动结束检测，减少抖动
+  const handleScrollEnd = useCallback(() => {
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    scrollTimeoutRef.current = setTimeout(() => {
+      setIsScrollSyncing(false);
+    }, 150); // 滚动结束后150ms才允许新的同步
+  }, []);
+
+  // 修改滚动处理函数，添加滚动结束检测
+  const handleTreeScrollWithEnd = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleTreeScroll();
+    handleScrollEnd();
+  }, [handleTreeScroll, handleScrollEnd]);
+
+  const handleCodeScrollWithEnd = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    handleCodeScroll();
+    handleScrollEnd();
+  }, [handleCodeScroll, handleScrollEnd]);
 
   // 清理函数
   useEffect(() => {
@@ -787,7 +818,7 @@ function App() {
               <div 
                 ref={treeScrollRef}
                 className="space-y-0 h-full overflow-y-auto scroll-smooth"
-                onScroll={handleTreeScroll}
+                onScroll={handleTreeScrollWithEnd}
               >
                 {renderJsonTree()}
               </div>
@@ -868,7 +899,7 @@ function App() {
                   <pre 
                     ref={codeScrollRef}
                     className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap scroll-smooth"
-                    onScroll={handleCodeScroll}
+                    onScroll={handleCodeScrollWithEnd}
                     style={{ lineHeight: '16px' }}
                   >
                     {formattedJson}
