@@ -117,66 +117,66 @@ function App() {
     const lines = JSON.stringify(data, null, 2).split('\n');
     const lineMap = new Map<string, number>();
     
-    const processNode = (obj: any, path: string[] = [], currentLine: number = 0): number => {
+    const processNode = (obj: any, path: string[] = [], startLine: number = 0): number => {
       if (obj === null || typeof obj !== 'object') {
         const pathKey = path.join('.');
-        lineMap.set(pathKey, currentLine);
-        return currentLine;
+        lineMap.set(pathKey, startLine);
+        return startLine;
       }
+      
+      let currentLine = startLine;
       
       if (Array.isArray(obj)) {
         obj.forEach((item, index) => {
           const newPath = [...path, index.toString()];
           const pathKey = newPath.join('.');
           
-          // 找到这个数组项在格式化JSON中的行号
-          let lineFound = false;
+          // 更精确地找到数组项的位置
           for (let i = currentLine; i < lines.length; i++) {
             const line = lines[i];
-            const indent = '  '.repeat(path.length + 1);
+            const expectedIndent = '  '.repeat(newPath.length);
             
             if (typeof item === 'object' && item !== null) {
-              if (line.trim().startsWith('{') || line.trim().startsWith('[')) {
+              // 对于对象/数组，找到开始的大括号或方括号
+              if ((line.trim().startsWith('{') || line.trim().startsWith('[')) && 
+                  (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
                 lineMap.set(pathKey, i);
                 currentLine = processNode(item, newPath, i + 1);
-                lineFound = true;
                 break;
               }
             } else {
-              const valueStr = JSON.stringify(item);
-              if (line.includes(valueStr) && line.startsWith(indent)) {
+              // 对于基本类型，找到包含值的行
+              const valueStr = typeof item === 'string' ? `"${item}"` : String(item);
+              if (line.includes(valueStr) && 
+                  (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
                 lineMap.set(pathKey, i);
                 currentLine = i + 1;
-                lineFound = true;
                 break;
               }
             }
           }
-          if (!lineFound) currentLine++;
         });
       } else {
         Object.entries(obj).forEach(([key, value]) => {
           const newPath = [...path, key];
           const pathKey = newPath.join('.');
           
-          // 找到这个对象属性在格式化JSON中的行号
-          let lineFound = false;
+          // 更精确地找到对象属性的位置
           for (let i = currentLine; i < lines.length; i++) {
             const line = lines[i];
-            const indent = '  '.repeat(path.length + 1);
+            const expectedIndent = '  '.repeat(newPath.length);
             
-            if (line.includes(`"${key}":`) && line.startsWith(indent)) {
+            if (line.includes(`"${key}":`) && 
+                (line.startsWith(expectedIndent) || line.startsWith('  ' + expectedIndent))) {
               lineMap.set(pathKey, i);
               if (typeof value === 'object' && value !== null) {
                 currentLine = processNode(value, newPath, i + 1);
               } else {
                 currentLine = i + 1;
               }
-              lineFound = true;
               break;
             }
           }
-          if (!lineFound) currentLine++;
         });
       }
       
@@ -378,15 +378,16 @@ function App() {
   const selectNode = useCallback((node: JsonNode) => {
     setSelectedNode(node);
     
-    // 同步滚动到格式化代码对应位置
+    // 同步滚动到格式化代码对应位置，添加偏移量优化对齐
     if (!isScrollSyncing && codeScrollRef.current) {
       const pathKey = node.path.join('.');
       const lineNumber = nodeLineMap.get(pathKey);
       
       if (lineNumber !== undefined) {
         setIsScrollSyncing(true);
-        const lineHeight = 16;
-        const scrollTop = lineNumber * lineHeight;
+        const lineHeight = 16; // 与CSS中的line-height保持一致
+        const headerOffset = 48; // 考虑代码区域的padding
+        const scrollTop = Math.max(0, lineNumber * lineHeight - headerOffset);
         smoothScrollTo(codeScrollRef.current, scrollTop);
       }
     }
@@ -396,50 +397,47 @@ function App() {
     if (isScrollSyncing || !treeScrollRef.current || !codeScrollRef.current) return;
     
     const treeContainer = treeScrollRef.current;
+    const codeContainer = codeScrollRef.current;
     const scrollTop = treeContainer.scrollTop;
     const containerHeight = treeContainer.clientHeight;
-    const middleY = scrollTop + containerHeight / 2;
     
-    // 优化：只检查可见区域附近的节点
+    // 计算树状结构可视区域的中心点
+    const viewportCenter = scrollTop + containerHeight / 2;
+    
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
     
-    // 使用更高效的方式查找可见节点
-    const visibleElements: Array<{ element: HTMLDivElement; pathKey: string; node: JsonNode }> = [];
-    
+    // 只检查可见区域内的节点
     treeItemRefs.current.forEach((element, pathKey) => {
       const elementTop = element.offsetTop;
       const elementBottom = elementTop + element.offsetHeight;
+      const elementCenter = elementTop + element.offsetHeight / 2;
       
-      // 只处理可见区域附近的元素
-      if (elementBottom >= scrollTop - 100 && elementTop <= scrollTop + containerHeight + 100) {
+      // 只处理可见区域内的元素
+      if (elementBottom >= scrollTop && elementTop <= scrollTop + containerHeight) {
         const node = jsonTree.find(n => n.path.join('.') === pathKey);
         if (node) {
-          visibleElements.push({ element, pathKey, node });
+          const distance = Math.abs(elementCenter - viewportCenter);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestNode = node;
+          }
         }
       }
     });
     
-    // 在可见元素中找到最接近中间的
-    visibleElements.forEach(({ element, node }) => {
-      const elementMiddle = element.offsetTop + element.offsetHeight / 2;
-      const distance = Math.abs(elementMiddle - middleY);
-      
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestNode = node;
-      }
-    });
-    
-    if (closestNode && codeScrollRef.current) {
+    if (closestNode) {
       const pathKey = closestNode.path.join('.');
       const lineNumber = nodeLineMap.get(pathKey);
       
       if (lineNumber !== undefined) {
         setIsScrollSyncing(true);
         const lineHeight = 16;
-        const scrollTop = lineNumber * lineHeight;
-        smoothScrollTo(codeScrollRef.current, scrollTop, 100);
+        const codeContainerHeight = codeContainer.clientHeight;
+        
+        // 计算目标滚动位置，让对应行显示在代码区域的中心
+        const targetScrollTop = Math.max(0, lineNumber * lineHeight - codeContainerHeight / 2 + lineHeight / 2);
+        smoothScrollTo(codeContainer, targetScrollTop, 120);
       }
     }
   }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
@@ -448,60 +446,54 @@ function App() {
     if (isScrollSyncing || !codeScrollRef.current || !treeScrollRef.current) return;
     
     const codeContainer = codeScrollRef.current;
+    const treeContainer = treeScrollRef.current;
     const scrollTop = codeContainer.scrollTop;
+    const containerHeight = codeContainer.clientHeight;
     const lineHeight = 16;
-    const currentLine = Math.floor(scrollTop / lineHeight);
     
-    // 优化：使用二分查找或更高效的方式找到最接近的节点
+    // 计算代码区域可视中心对应的行号
+    const centerLine = Math.floor((scrollTop + containerHeight / 2) / lineHeight);
+    
     let closestNode: JsonNode | null = null;
     let closestDistance = Infinity;
     
-    // 创建一个按行号排序的数组来优化查找
-    const sortedNodes = Array.from(nodeLineMap.entries())
-      .map(([pathKey, lineNumber]) => ({
-        pathKey,
-        lineNumber,
-        node: jsonTree.find(n => n.path.join('.') === pathKey)
-      }))
-      .filter(item => item.node)
-      .sort((a, b) => a.lineNumber - b.lineNumber);
-    
-    // 找到最接近当前行的节点
-    for (const item of sortedNodes) {
-      const distance = Math.abs(item.lineNumber - currentLine);
+    // 找到最接近中心行的节点
+    nodeLineMap.forEach((lineNumber, pathKey) => {
+      const distance = Math.abs(lineNumber - centerLine);
       if (distance < closestDistance) {
         closestDistance = distance;
-        closestNode = item.node!;
-      } else if (distance > closestDistance) {
-        // 由于已排序，距离开始增加时可以停止搜索
-        break;
+        const node = jsonTree.find(n => n.path.join('.') === pathKey);
+        if (node) {
+          closestNode = node;
+        }
       }
-    }
+    });
     
-    if (closestNode && treeScrollRef.current) {
+    if (closestNode) {
       const pathKey = closestNode.path.join('.');
       const element = treeItemRefs.current.get(pathKey);
       
       if (element) {
         setIsScrollSyncing(true);
-        const treeContainer = treeScrollRef.current;
         const elementTop = element.offsetTop;
-        const containerHeight = treeContainer.clientHeight;
-        const scrollTop = Math.max(0, elementTop - containerHeight / 2);
+        const treeContainerHeight = treeContainer.clientHeight;
+        const elementHeight = element.offsetHeight;
         
-        smoothScrollTo(treeContainer, scrollTop, 100);
+        // 计算目标滚动位置，让对应节点显示在树状结构的中心
+        const targetScrollTop = Math.max(0, elementTop - treeContainerHeight / 2 + elementHeight / 2);
+        smoothScrollTo(treeContainer, targetScrollTop, 120);
       }
     }
   }, [jsonTree, nodeLineMap, isScrollSyncing, smoothScrollTo]);
 
   // 使用节流的滚动处理函数
   const handleTreeScroll = useCallback(
-    throttle(handleTreeScrollInternal, 16), // 约60fps
+    throttle(handleTreeScrollInternal, 20), // 50fps，减少计算频率
     [handleTreeScrollInternal, throttle]
   );
 
   const handleCodeScroll = useCallback(
-    throttle(handleCodeScrollInternal, 16), // 约60fps
+    throttle(handleCodeScrollInternal, 20), // 50fps，减少计算频率
     [handleCodeScrollInternal, throttle]
   );
 
@@ -794,9 +786,8 @@ function App() {
             {jsonTree.length > 0 ? (
               <div 
                 ref={treeScrollRef}
-                className="space-y-0 h-full overflow-y-auto"
+                className="space-y-0 h-full overflow-y-auto scroll-smooth"
                 onScroll={handleTreeScroll}
-                style={{ scrollBehavior: 'auto' }}
               >
                 {renderJsonTree()}
               </div>
@@ -876,9 +867,9 @@ function App() {
                 ) : (
                   <pre 
                     ref={codeScrollRef}
-                    className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap"
+                    className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap scroll-smooth"
                     onScroll={handleCodeScroll}
-                    style={{ lineHeight: '16px', scrollBehavior: 'auto' }}
+                    style={{ lineHeight: '16px' }}
                   >
                     {formattedJson}
                   </pre>
