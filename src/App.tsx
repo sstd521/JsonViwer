@@ -22,6 +22,12 @@ function App() {
   const [isEditingFormatted, setIsEditingFormatted] = useState(false);
   const [formattedEditValue, setFormattedEditValue] = useState('');
   const [selectedNode, setSelectedNode] = useState<JsonNode | null>(null);
+  const [nodeLineMap, setNodeLineMap] = useState<Map<string, number>>(new Map());
+  const [isScrollSyncing, setIsScrollSyncing] = useState(false);
+  
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const codeScrollRef = useRef<HTMLDivElement>(null);
+  const treeItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const getValueType = (value: any): string => {
     if (value === null) return 'null';
@@ -102,6 +108,82 @@ function App() {
     return nodes;
   }, []);
 
+  const calculateNodeLineNumbers = useCallback((data: any) => {
+    if (!data) return new Map();
+    
+    const lines = JSON.stringify(data, null, 2).split('\n');
+    const lineMap = new Map<string, number>();
+    
+    const processNode = (obj: any, path: string[] = [], currentLine: number = 0): number => {
+      if (obj === null || typeof obj !== 'object') {
+        const pathKey = path.join('.');
+        lineMap.set(pathKey, currentLine);
+        return currentLine;
+      }
+      
+      if (Array.isArray(obj)) {
+        obj.forEach((item, index) => {
+          const newPath = [...path, index.toString()];
+          const pathKey = newPath.join('.');
+          
+          // 找到这个数组项在格式化JSON中的行号
+          let lineFound = false;
+          for (let i = currentLine; i < lines.length; i++) {
+            const line = lines[i];
+            const indent = '  '.repeat(path.length + 1);
+            
+            if (typeof item === 'object' && item !== null) {
+              if (line.trim().startsWith('{') || line.trim().startsWith('[')) {
+                lineMap.set(pathKey, i);
+                currentLine = processNode(item, newPath, i + 1);
+                lineFound = true;
+                break;
+              }
+            } else {
+              const valueStr = JSON.stringify(item);
+              if (line.includes(valueStr) && line.startsWith(indent)) {
+                lineMap.set(pathKey, i);
+                currentLine = i + 1;
+                lineFound = true;
+                break;
+              }
+            }
+          }
+          if (!lineFound) currentLine++;
+        });
+      } else {
+        Object.entries(obj).forEach(([key, value]) => {
+          const newPath = [...path, key];
+          const pathKey = newPath.join('.');
+          
+          // 找到这个对象属性在格式化JSON中的行号
+          let lineFound = false;
+          for (let i = currentLine; i < lines.length; i++) {
+            const line = lines[i];
+            const indent = '  '.repeat(path.length + 1);
+            
+            if (line.includes(`"${key}":`) && line.startsWith(indent)) {
+              lineMap.set(pathKey, i);
+              if (typeof value === 'object' && value !== null) {
+                currentLine = processNode(value, newPath, i + 1);
+              } else {
+                currentLine = i + 1;
+              }
+              lineFound = true;
+              break;
+            }
+          }
+          if (!lineFound) currentLine++;
+        });
+      }
+      
+      return currentLine;
+    };
+    
+    processNode(data);
+    return lineMap;
+  }, []);
+
   const formatJson = useCallback(() => {
     if (!jsonInput.trim()) {
       setError('请输入JSON内容');
@@ -114,6 +196,7 @@ function App() {
       setFormattedJson(formatted);
       setParsedData(parsed);
       setJsonTree(buildJsonTree(parsed));
+      setNodeLineMap(calculateNodeLineNumbers(parsed));
       setError('');
       setSelectedNode(null);
     } catch (err) {
@@ -123,15 +206,16 @@ function App() {
       setJsonTree([]);
       setSelectedNode(null);
     }
-  }, [jsonInput, buildJsonTree]);
+  }, [jsonInput, buildJsonTree, calculateNodeLineNumbers]);
 
   useEffect(() => {
     if (parsedData !== null) {
       const formatted = JSON.stringify(parsedData, null, 2);
       setFormattedJson(formatted);
       setJsonTree(buildJsonTree(parsedData));
+      setNodeLineMap(calculateNodeLineNumbers(parsedData));
     }
-  }, [parsedData, buildJsonTree]);
+  }, [parsedData, buildJsonTree, calculateNodeLineNumbers]);
 
   const toggleExpanded = useCallback((index: number) => {
     setJsonTree(prev => {
@@ -251,7 +335,104 @@ function App() {
 
   const selectNode = useCallback((node: JsonNode) => {
     setSelectedNode(node);
+    
+    // 同步滚动到格式化代码对应位置
+    if (!isScrollSyncing && codeScrollRef.current) {
+      const pathKey = node.path.join('.');
+      const lineNumber = nodeLineMap.get(pathKey);
+      
+      if (lineNumber !== undefined) {
+        setIsScrollSyncing(true);
+        const lineHeight = 16; // 假设每行高度为16px
+        const scrollTop = lineNumber * lineHeight;
+        codeScrollRef.current.scrollTop = scrollTop;
+        
+        setTimeout(() => setIsScrollSyncing(false), 100);
+      }
+    }
   }, []);
+
+  const handleTreeScroll = useCallback(() => {
+    if (isScrollSyncing || !treeScrollRef.current || !codeScrollRef.current) return;
+    
+    // 找到当前可见区域中间的节点
+    const treeContainer = treeScrollRef.current;
+    const scrollTop = treeContainer.scrollTop;
+    const containerHeight = treeContainer.clientHeight;
+    const middleY = scrollTop + containerHeight / 2;
+    
+    // 遍历所有可见节点，找到最接近中间位置的节点
+    let closestNode: JsonNode | null = null;
+    let closestDistance = Infinity;
+    
+    treeItemRefs.current.forEach((element, pathKey) => {
+      const rect = element.getBoundingClientRect();
+      const containerRect = treeContainer.getBoundingClientRect();
+      const elementMiddle = rect.top - containerRect.top + treeContainer.scrollTop + rect.height / 2;
+      const distance = Math.abs(elementMiddle - middleY);
+      
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        const node = jsonTree.find(n => n.path.join('.') === pathKey);
+        if (node) closestNode = node;
+      }
+    });
+    
+    // 同步滚动格式化代码
+    if (closestNode && codeScrollRef.current) {
+      const pathKey = closestNode.path.join('.');
+      const lineNumber = nodeLineMap.get(pathKey);
+      
+      if (lineNumber !== undefined) {
+        setIsScrollSyncing(true);
+        const lineHeight = 16;
+        const scrollTop = lineNumber * lineHeight;
+        codeScrollRef.current.scrollTop = scrollTop;
+        
+        setTimeout(() => setIsScrollSyncing(false), 100);
+      }
+    }
+  }, [jsonTree, nodeLineMap, isScrollSyncing]);
+
+  const handleCodeScroll = useCallback(() => {
+    if (isScrollSyncing || !codeScrollRef.current || !treeScrollRef.current) return;
+    
+    const codeContainer = codeScrollRef.current;
+    const scrollTop = codeContainer.scrollTop;
+    const lineHeight = 16;
+    const currentLine = Math.floor(scrollTop / lineHeight);
+    
+    // 找到最接近当前行的节点
+    let closestNode: JsonNode | null = null;
+    let closestDistance = Infinity;
+    
+    nodeLineMap.forEach((lineNumber, pathKey) => {
+      const distance = Math.abs(lineNumber - currentLine);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        const node = jsonTree.find(n => n.path.join('.') === pathKey);
+        if (node) closestNode = node;
+      }
+    });
+    
+    // 同步滚动树状结构
+    if (closestNode && treeScrollRef.current) {
+      const pathKey = closestNode.path.join('.');
+      const element = treeItemRefs.current.get(pathKey);
+      
+      if (element) {
+        setIsScrollSyncing(true);
+        const treeContainer = treeScrollRef.current;
+        const elementTop = element.offsetTop;
+        const containerHeight = treeContainer.clientHeight;
+        const scrollTop = elementTop - containerHeight / 2;
+        
+        treeContainer.scrollTop = Math.max(0, scrollTop);
+        
+        setTimeout(() => setIsScrollSyncing(false), 100);
+      }
+    }
+  }, [jsonTree, nodeLineMap, isScrollSyncing]);
 
   const getValueDisplay = (node: JsonNode) => {
     const { value, type, path } = node;
@@ -343,6 +524,14 @@ function App() {
       return (
         <div
           key={originalIndex}
+          ref={(el) => {
+            const pathKey = node.path.join('.');
+            if (el) {
+              treeItemRefs.current.set(pathKey, el);
+            } else {
+              treeItemRefs.current.delete(pathKey);
+            }
+          }}
           className={`group flex items-center py-1.5 px-2 hover:bg-blue-50 rounded cursor-pointer transition-colors duration-200 ${
             isSelected ? 'bg-blue-100 border-l-4 border-blue-500' : ''
           }`}
@@ -518,7 +707,11 @@ function App() {
           </div>
           <div className="flex-1 overflow-y-auto p-1">
             {jsonTree.length > 0 ? (
-              <div className="space-y-0">
+              <div 
+                ref={treeScrollRef}
+                className="space-y-0 h-full overflow-y-auto"
+                onScroll={handleTreeScroll}
+              >
                 {renderJsonTree()}
               </div>
             ) : (
@@ -595,7 +788,12 @@ function App() {
                     autoFocus
                   />
                 ) : (
-                  <pre className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap">
+                  <pre 
+                    ref={codeScrollRef}
+                    className="p-3 bg-gray-900 text-green-400 font-mono text-xs h-full overflow-auto whitespace-pre-wrap"
+                    onScroll={handleCodeScroll}
+                    style={{ lineHeight: '16px' }}
+                  >
                     {formattedJson}
                   </pre>
                 )}
