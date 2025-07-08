@@ -626,12 +626,12 @@ function App() {
                 e.stopPropagation();
                 toggleExpanded(originalIndex);
               }}
-              className="flex items-center justify-center w-3 h-3 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200"
+              className="flex items-center justify-center w-4 h-4 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0"
             >
-              {node.isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              {node.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
           ) : (
-            <div className="w-3 h-3 mr-1" />
+            <div className="w-4 h-4 mr-1 flex-shrink-0" />
           )}
           <span className="text-blue-700 font-medium mr-1 text-xs truncate flex-shrink-0" style={{ maxWidth: '120px' }}>{node.key}:</span>
           <div className="text-xs flex-1 min-w-0">{getValueDisplay(node)}</div>
