@@ -261,8 +261,9 @@ function App() {
   const toggleExpanded = useCallback((index: number) => {
     setJsonTree(prev => {
       const newTree = [...prev];
-      const node = newTree[index];
-      node.isExpanded = !node.isExpanded;
+      if (newTree[index]) {
+        newTree[index] = { ...newTree[index], isExpanded: !newTree[index].isExpanded };
+      }
       return newTree;
     });
   }, []);
@@ -624,9 +625,11 @@ function App() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 toggleExpanded(originalIndex);
               }}
-              className="flex items-center justify-center w-4 h-4 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0"
+              className="flex items-center justify-center w-4 h-4 mr-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors duration-200 flex-shrink-0 z-10 relative"
+              type="button"
             >
               {node.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
